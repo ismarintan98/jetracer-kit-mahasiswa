@@ -1,10 +1,10 @@
-# slam_toolbox untuk robot JetRacer — mode mapping, jalan di PC (bukan robot).
+# Parameter slam_toolbox untuk robot JetRacer — dipakai BERSAMA oleh
+# mapping.launch.py dan localization.launch.py (launch menimpa `mode`,
+# `map_file_name`, `map_start_pose`). Jalan di PC, bukan di robot.
 #
-#   ros2 launch slam_toolbox online_async_launch.py \
-#       slam_params_file:=/workspace/contoh/slam.yaml use_sim_time:=false
-#
-# Simpan peta (di shell lain):
-#   ros2 run nav2_map_server map_saver_cli -f /workspace/peta_lab
+#   ./ros.sh ros2 launch /workspace/nav/mapping.launch.py
+#   ./ros.sh /workspace/nav/simpan_peta.sh lab
+#   ./ros.sh ros2 launch /workspace/nav/localization.launch.py peta:=lab
 slam_toolbox:
   ros__parameters:
     # Frame & topik dari driver robot (jetracer_driver)

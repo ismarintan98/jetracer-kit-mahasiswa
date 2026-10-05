@@ -133,28 +133,60 @@ kodenya di [`contoh/hindari_halangan.py`](contoh/hindari_halangan.py).
 Tombol `i` maju, `,` mundur, `u`/`o` maju belok kiri/kanan, `k` berhenti.
 **Tahan tombolnya**: robot berhenti 0.5 s setelah tombol dilepas.
 
-### SLAM (membuat peta) — slam_toolbox
+### Peta & lokalisasi — slam_toolbox (`nav/`)
 
-Shell 1:
+Dua tahap, keduanya jalan di PC kalian. Parameter bersama ada di
+[`nav/slam.yaml`](nav/slam.yaml).
 
-```bash
-./ros.sh ros2 launch slam_toolbox online_async_launch.py \
-    slam_params_file:=/workspace/contoh/slam.yaml use_sim_time:=false
-```
+**Tahap 1 — Mapping (sekali per ruangan)**
 
-Shell 2: `./ros.sh rviz2`. Set **Fixed Frame = `map`**, lalu tambahkan display
-**Map** (`/map`), **LaserScan** (`/scan`), dan **TF**.
+1. Letakkan robot di **titik awal** yang mudah diulang (mis. tanda selotip di
+   lantai, robot menghadap dinding tertentu). Titik ini menjadi acuan
+   lokalisasi nanti.
+2. Shell 1 — mulai mapping:
+   ```bash
+   ./ros.sh ros2 launch /workspace/nav/mapping.launch.py
+   ```
+3. Shell 2 — `./ros.sh rviz2`. Set Fixed Frame `map`, lalu tambahkan display
+   **Map** (`/map`), **LaserScan** (`/scan`), dan **TF**.
+4. Shell 3 — jalankan robot **pelan** (≤ 0.2 m/s) keliling ruangan dengan
+   teleop. Lewati tiap area dari beberapa arah, dan kembali ke titik awal di
+   akhir (membantu loop closure).
+   > Peta baru terisi setelah robot **bergerak**. Robot diam = peta hampir
+   > kosong, karena sel harus terlihat dari beberapa pose.
+5. Simpan:
+   ```bash
+   ./ros.sh /workspace/nav/simpan_peta.sh lab
+   ```
+   Hasilnya ada di folder `peta/`: `lab.posegraph` + `lab.data` (untuk
+   lokalisasi) dan `lab.pgm` + `lab.yaml` (peta gambar untuk Nav2/laporan).
 
-Shell 3: jalankan robot pelan keliling ruangan (teleop di atas). Simpan peta:
+**Tahap 2 — Lokalisasi (setiap kali robot dipakai di ruangan itu)**
 
-```bash
-./ros.sh ros2 run nav2_map_server map_saver_cli -f /workspace/peta_lab
-```
+1. Letakkan robot **di titik awal yang sama dengan saat mapping**, dengan
+   arah yang sama.
+2. Jalankan:
+   ```bash
+   ./ros.sh ros2 launch /workspace/nav/localization.launch.py peta:=lab
+   ```
+   Robot di tempat lain? Beri posenya, misalnya `x:=1.2 y:=0.5 theta:=1.57`,
+   atau pakai **2D Pose Estimate** di RViz.
+3. Lihat posisi robot di peta:
+   ```bash
+   ./ros.sh python3 /workspace/nav/posisi_robot.py
+   ```
+   Posisi ada di TF `map → base_footprint`. slam_toolbox di Humble **tidak**
+   menerbitkan topik pose. Lihat [`nav/posisi_robot.py`](nav/posisi_robot.py)
+   untuk cara membacanya dari kode.
+
+Scan matching hanya mengoreksi kesalahan pose awal yang **kecil** (puluhan
+cm, belasan derajat). Pose awal yang jauh salah = robot "tersesat"; beri pose
+yang benar lewat RViz.
 
 ### Navigasi — Nav2
 
 Image kit sudah berisi `navigation2` dan `nav2_bringup`. Frame yang dipakai:
-`map` → `odom` → `base_footprint`, scan `/scan`, odometri `/odom`, perintah
+`map` (dari lokalisasi di atas) → `odom` → `base_footprint`, scan `/scan`, odometri `/odom`, perintah
 `/cmd_vel`. Ingat batasan Ackermann di bagian 3.
 
 ---
@@ -169,5 +201,7 @@ Image kit sudah berisi `navigation2` dan `nav2_bringup`. Frame yang dipakai:
 | Robot tidak bergerak dengan `angular.z` saja | Ackermann: v = 0 → berhenti | beri `linear.x` juga |
 | Robot berhenti-berhenti sendiri | `/cmd_vel` dikirim < 2 kali per detik | kirim ≥ 10 Hz |
 | RViz: display baru diam tanpa error | Fixed Frame tidak ada (mis. `map` tanpa SLAM) | ganti Fixed Frame ke `odom` |
+| Peta hampir kosong | robot tidak bergerak saat mapping | jalankan robot keliling ruangan |
+| Lokalisasi: posisi melompat / salah | pose awal salah (robot tidak di titik awal mapping) | letakkan di titik awal, atau 2D Pose Estimate di RViz |
 | Docker Desktop (Windows/macOS) tidak melihat robot | `--net=host` tidak didukung penuh | pakai Linux |
 | `docker: permission denied` | user belum di grup docker | `sudo usermod -aG docker $USER`, lalu login ulang |
