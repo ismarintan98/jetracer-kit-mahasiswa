@@ -97,5 +97,7 @@ exec docker run --rm "${TTY_ARGS[@]}" \
     -e CYCLONEDDS_URI=file:///cfg/cyclonedds.xml \
     -v "$CFG:/cfg/cyclonedds.xml:ro" \
     -v "$WORKSPACE:/workspace" \
+    -v "$KIT/model:/opt/jetracer_model:ro" \
+    -e AMENT_PREFIX_PATH=/opt/jetracer_model \
     "${X_ARGS[@]}" \
     "$IMAGE" bash -c 'mkdir -p "$HOME"; source /opt/ros/humble/setup.bash; exec "${@:-bash}"' _ "$@"
