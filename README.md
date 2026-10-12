@@ -393,4 +393,4 @@ Build ulang, lalu: `./ros.sh ros2 launch tugas_saya tugas.launch.py`.
 | Peta hampir kosong | robot tidak bergerak saat mapping | jalankan robot keliling ruangan |
 | Lokalisasi: posisi melompat / salah | pose awal salah (robot tidak di titik awal mapping) | letakkan di titik awal, atau 2D Pose Estimate di RViz |
 | Docker Desktop (Windows/macOS) tidak melihat robot | `--net=host` tidak didukung penuh | pakai Linux |
-| `docker: permission denied` | user belum di grup docker | `sudo usermod -aG docker $USER`, lalu login ulang |
+| `permission denied while trying to connect to the docker API` | sesi login belum masuk grup `docker` (belum logout/login setelah `setup.sh`), atau `setup.sh` belum dijalankan | jalankan `./setup.sh`, lalu **logout & login** (menutup terminal saja tidak cukup). Sementara: `newgrp docker` di terminal itu |

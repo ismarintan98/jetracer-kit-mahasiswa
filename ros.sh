@@ -32,6 +32,32 @@ if [[ -z "$ROBOT_IP" ]]; then
     exit 1
 fi
 
+# --- akses docker -----------------------------------------------------------
+# Tanpa cek ini, akses yang ditolak terbaca sebagai "image belum ada" dan
+# ros.sh mencoba build ~5 GB yang lalu gagal dengan pesan membingungkan.
+if ! command -v docker >/dev/null; then
+    echo "!! Docker belum terpasang. Jalankan dulu: ./setup.sh" >&2
+    exit 1
+fi
+if ! err=$(docker info 2>&1 >/dev/null); then
+    me=$(id -un)
+    if grep -qi "permission denied" <<<"$err"; then
+        if id -nG "$me" | tr ' ' '\n' | grep -qx docker; then
+            echo "!! $me sudah masuk grup docker, tapi sesi login ini belum." >&2
+            echo "   LOGOUT lalu LOGIN lagi (atau reboot). Menutup terminal saja tidak cukup." >&2
+            echo "   Sementara, di terminal ini: newgrp docker   lalu jalankan ./ros.sh lagi." >&2
+        else
+            echo "!! $me belum boleh memakai Docker (bukan anggota grup docker)." >&2
+            echo "   Jalankan ./setup.sh (atau: sudo usermod -aG docker $me), lalu LOGOUT & LOGIN lagi." >&2
+        fi
+    else
+        echo "!! Docker tidak bisa dihubungi:" >&2
+        sed 's/^/   /' <<<"$err" >&2
+        echo "   Daemon mati? Coba: sudo systemctl start docker" >&2
+    fi
+    exit 1
+fi
+
 # --- image ------------------------------------------------------------------
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
     echo ">> Membangun image $IMAGE (sekali saja, ~5 GB unduhan)..."
