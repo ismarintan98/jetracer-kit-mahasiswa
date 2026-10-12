@@ -166,7 +166,12 @@ while not rospy.is_shutdown():
 
 Simpan di mana saja di folder kit, lalu jalankan dengan
 `./ros.sh python3 /workspace/<file>.py`. `import ros1_style` selalu tersedia
-di `ros.sh`. Contoh paling kecil: [`contoh/keyboard_test.py`](contoh/keyboard_test.py).
+di `ros.sh`. Contoh lengkap yang kecil: [`contoh/keyboard_test.py`](contoh/keyboard_test.py),
+yaitu kendali keyboard (`w`/`a`/`s`/`d`, spasi = berhenti) dengan rem darurat dari `/scan`:
+
+```bash
+./ros.sh python3 /workspace/contoh/keyboard_test.py     # angkat roda dulu!
+```
 
 | rospy (ROS 1) | `ros1_style` |
 |---|---|
