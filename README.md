@@ -27,6 +27,23 @@ DDS).
   dual-boot atau PC lab Linux.
 - Terhubung ke jaringan yang bisa mencapai robot: tes dengan `ping <IP robot>`.
 
+### Cara cepat: `setup.sh` (sekali saja)
+
+```bash
+./setup.sh                                  # subnet robot default 10.17.36.0/22
+./setup.sh --subnet <subnet robot>          # kalau subnet beda (tanya dosen)
+./setup.sh --robot-ip 10.17.36.90           # sekaligus tes sambungan ke robot
+```
+
+Script ini memasang Docker Engine, memasukkan kalian ke grup `docker`,
+membangun image ROS 2 (Nav2, slam_toolbox, teleop, RViz; ±5 GB unduhan),
+membuka firewall (ufw/firewalld), dan menyiapkan folder `ros2_ws/src` dan
+`peta/`. Script ini aman dijalankan ulang. Distro yang didukung: Ubuntu,
+Debian, Fedora, dan Arch. Kalau script meminta, **logout & login lagi**
+setelah selesai.
+
+Kalau mau memasang manual, ikuti langkah di bawah.
+
 Pasang Docker (Ubuntu): `sudo apt install docker.io`, lalu
 `sudo usermod -aG docker $USER`, lalu **logout & login lagi**.
 
@@ -124,6 +141,50 @@ dan peta kalian di sini supaya tidak hilang saat container ditutup.
 Robot maju pelan dan berhenti kalau ada benda < 0.6 m di depannya. Baca
 kodenya di [`contoh/hindari_halangan.py`](contoh/hindari_halangan.py).
 
+### Gaya ROS 1 (rospy) — `lib/ros1_style.py`
+
+Kalau lebih suka loop `while` seperti di ROS 1, tanpa class:
+
+```python
+import ros1_style as rospy
+from geometry_msgs.msg import Twist
+from sensor_msgs.msg import LaserScan
+
+jarak = [None]
+def on_scan(msg):
+    jarak[0] = min(r for r in msg.ranges if r > 0)   # benda terdekat, arah mana saja
+
+rospy.init_node("tes_saya")
+pub = rospy.Publisher("/cmd_vel", Twist)
+rospy.Subscriber("/scan", LaserScan, on_scan)
+rate = rospy.Rate(10)                 # 10 Hz
+
+while not rospy.is_shutdown():
+    rospy.loginfo("jarak = %s" % jarak[0])
+    rate.sleep()
+```
+
+Simpan di mana saja di folder kit, lalu jalankan dengan
+`./ros.sh python3 /workspace/<file>.py`. `import ros1_style` selalu tersedia
+di `ros.sh`. Contoh paling kecil: [`contoh/keyboard_test.py`](contoh/keyboard_test.py).
+
+| rospy (ROS 1) | `ros1_style` |
+|---|---|
+| `rospy.init_node`, `Rate`, `is_shutdown`, `sleep`, `spin` | sama |
+| `rospy.Publisher(topic, Tipe, queue_size=10)` | sama (`queue_size` opsional) |
+| `rospy.Subscriber(topic, Tipe, callback)` | sama |
+| `rospy.wait_for_message(topic, Tipe, timeout)` | sama, tapi mengembalikan `None` saat timeout |
+| `rospy.loginfo / logwarn / logerr` | sama |
+| `rospy.get_param` | belum ada; pakai `rospy.node.declare_parameter(...)` |
+
+- Callback subscriber jalan di thread latar belakang, sama seperti rospy.
+- **Ctrl-C** membuat loop selesai dengan rapi. Ctrl-C kedua memaksa berhenti.
+- Saat program selesai, setiap Publisher `Twist` otomatis mengirim Twist nol,
+  sehingga robot berhenti.
+- `rospy.node` adalah node rclpy biasa, kalau butuh fitur ROS 2 lain.
+- Gaya ini untuk belajar dan program sederhana. Untuk paket dengan launch file
+  (bagian 5), pakai gaya class/timer seperti `hindari_halangan.py`.
+
 ### Teleop keyboard
 
 ```bash
@@ -191,7 +252,130 @@ Image kit sudah berisi `navigation2` dan `nav2_bringup`. Frame yang dipakai:
 
 ---
 
-## 5. Kalau ada masalah
+## 5. Membuat paket ROS 2 sendiri
+
+Satu file `.py` seperti contoh di atas cukup untuk percobaan. Untuk tugas yang
+lebih besar (beberapa node, launch file, parameter YAML), buat **paket ROS 2**
+di workspace `ros2_ws/` di dalam folder kit ini.
+
+### Membuat paket (sekali)
+
+```bash
+./ros.sh                                  # masuk shell ROS 2
+mkdir -p /workspace/ros2_ws/src && cd /workspace/ros2_ws/src
+ros2 pkg create --build-type ament_python --license MIT \
+    --dependencies rclpy geometry_msgs sensor_msgs nav_msgs \
+    --node-name node_saya tugas_saya
+cd /workspace/ros2_ws
+colcon build --symlink-install
+exit
+```
+
+Hasilnya:
+
+```
+kit-mahasiswa/ros2_ws/
+├── src/tugas_saya/              ← kode kalian (simpan / masukkan ke git)
+│   ├── package.xml              dependensi paket
+│   ├── setup.py                 daftar node (entry_points) & file data
+│   └── tugas_saya/node_saya.py  kode node
+├── build/  install/  log/       ← hasil build (boleh dihapus, jangan di-git)
+```
+
+Edit kode dengan editor apa saja **di PC** (VS Code, dll.): folder ini sama
+dengan `/workspace/ros2_ws` di dalam container.
+
+### Menjalankan
+
+```bash
+./ros.sh ros2 run tugas_saya node_saya
+./ros.sh ros2 run tugas_saya node_saya --ros-args -p kecepatan:=0.1
+```
+
+`ros.sh` otomatis memuat `ros2_ws/install/setup.bash`, jadi paket kalian
+langsung dikenali, baik lewat `./ros.sh <perintah>` maupun di shell `./ros.sh`.
+
+### Kapan harus `colcon build` lagi?
+
+Karena memakai `--symlink-install`:
+
+| Perubahan | Perlu build ulang? |
+|---|---|
+| Mengubah isi file `.py` yang sudah ada | **Tidak**, langsung jalankan lagi |
+| Menambah node baru, file launch, atau file YAML | **Ya** |
+| Mengubah `setup.py` atau `package.xml` | **Ya** |
+| Membuat paket baru | **Ya** |
+
+Build ulang: `./ros.sh bash -c "cd /workspace/ros2_ws && colcon build --symlink-install"`.
+
+### Menambah node kedua
+
+1. Buat `ros2_ws/src/tugas_saya/tugas_saya/node_kedua.py` dengan fungsi `main()`
+   (salin pola dari [`contoh/hindari_halangan.py`](contoh/hindari_halangan.py)).
+2. Daftarkan di `setup.py`, bagian `entry_points`:
+   ```python
+   'console_scripts': [
+       'node_saya = tugas_saya.node_saya:main',
+       'node_kedua = tugas_saya.node_kedua:main',
+   ],
+   ```
+3. `colcon build --symlink-install`, lalu `./ros.sh ros2 run tugas_saya node_kedua`.
+
+### Launch file & parameter YAML
+
+Untuk menjalankan beberapa node sekaligus, buat folder `launch/` dan `config/`
+di dalam paket, lalu daftarkan di `setup.py` supaya ikut ter-install:
+
+```python
+import os
+from glob import glob
+...
+    data_files=[
+        ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
+        ('share/' + package_name, ['package.xml']),
+        (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
+        (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
+    ],
+```
+
+Contoh `launch/tugas.launch.py`:
+
+```python
+import os
+from ament_index_python.packages import get_package_share_directory
+from launch import LaunchDescription
+from launch_ros.actions import Node
+
+
+def generate_launch_description():
+    param = os.path.join(get_package_share_directory("tugas_saya"), "config", "param.yaml")
+    return LaunchDescription([
+        Node(package="tugas_saya", executable="node_saya", parameters=[param], output="screen"),
+    ])
+```
+
+`config/param.yaml` (nama node harus sama dengan `super().__init__("...")`):
+
+```yaml
+node_saya:
+  ros__parameters:
+    kecepatan: 0.15
+```
+
+Build ulang, lalu: `./ros.sh ros2 launch tugas_saya tugas.launch.py`.
+
+### Catatan
+
+- **Jangan** menyalin `build/` dan `install/` ke PC lain atau ke robot.
+  Cukup bawa `src/`, lalu build ulang di sana.
+- Build error aneh setelah mengganti nama atau menghapus file? Hapus hasil
+  build lalu build ulang: `rm -rf ros2_ws/build ros2_ws/install ros2_ws/log`.
+- Paket C++ (`--build-type ament_cmake`) juga bisa. Alurnya sama, tapi
+  **setiap** perubahan kode perlu `colcon build`.
+
+---
+
+## 6. Kalau ada masalah
 
 | Gejala | Penyebab | Solusi |
 |---|---|---|

@@ -1,0 +1,3 @@
+# Dockerfile kit tidak meng-COPY apa pun — jangan kirim isi kit (ros2_ws,
+# peta, mesh) sebagai build context. Dockerfile tetap terkirim.
+*

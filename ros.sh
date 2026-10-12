@@ -98,6 +98,12 @@ exec docker run --rm "${TTY_ARGS[@]}" \
     -v "$CFG:/cfg/cyclonedds.xml:ro" \
     -v "$WORKSPACE:/workspace" \
     -v "$KIT/model:/opt/jetracer_model:ro" \
+    -v "$KIT/lib:/opt/jetracer_lib:ro" \
     -e AMENT_PREFIX_PATH=/opt/jetracer_model \
     "${X_ARGS[@]}" \
-    "$IMAGE" bash -c 'mkdir -p "$HOME"; source /opt/ros/humble/setup.bash; exec "${@:-bash}"' _ "$@"
+    "$IMAGE" bash -c 'mkdir -p "$HOME"; source /opt/ros/humble/setup.bash
+        # Paket buatan sendiri (colcon build di /workspace/ros2_ws) — supaya
+        # `./ros.sh ros2 run <paket> ...` juga menemukannya, bukan hanya shell interaktif.
+        [ -f /workspace/ros2_ws/install/setup.bash ] && source /workspace/ros2_ws/install/setup.bash
+        export PYTHONPATH="/opt/jetracer_lib:$PYTHONPATH"     # import ros1_style
+        exec "${@:-bash}"' _ "$@"
