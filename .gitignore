@@ -1,0 +1,20 @@
+# Hasil build ROS 2 — build ulang di tiap PC, jangan dibagikan.
+# ros2_ws/src/ sengaja TIDAK di-ignore: kode paket kalian ada di sana.
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# Peta hasil mapping — data, bukan kode. Mau disimpan di git? git add -f peta/<nama>.*
+peta/*
+!peta/.gitkeep
+
+# Rekaman ROS bag
+*.bag
+*.db3
+*.mcap
+rosbag2_*/
+
+__pycache__/
+*.pyc
+*.swp
+*~
