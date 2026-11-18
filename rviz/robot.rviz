@@ -35,6 +35,16 @@ Visualization Manager:
       Color Transformer: FlatColor
       Color: 57; 135; 229
       Decay Time: 0
+    # 16 sonar Pioneer P3-DX dari LiDAR. Tampilan khusus sonar: rviz/sonar.rviz
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Sonar P3-DX
+      Enabled: true
+      Topic:
+        Value: /sonar/markers
+        Depth: 5
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
     - Class: rviz_default_plugins/Odometry
       Name: Odometry
       Enabled: true

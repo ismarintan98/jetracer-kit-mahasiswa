@@ -82,6 +82,9 @@ sekali saja). Topik yang harus muncul:
 | `/odom` | `nav_msgs/Odometry` | robot → PC | 50 Hz, dari encoder roda (dihitung firmware) |
 | `/imu` | `sensor_msgs/Imu` | robot → PC | 50 Hz, MPU9250 |
 | `/scan` | `sensor_msgs/LaserScan` | robot → PC | ~7.8 Hz, 360 sampel, 0.15–12 m |
+| `/cmd_wheel_vel` | `std_msgs/Float32MultiArray` | PC → robot | **mode Pioneer P3-DX**: `[φL, φR]` kecepatan sudut roda P3-DX (rad/s), lihat bagian 4 |
+| `/sonar` | `std_msgs/Float32MultiArray` | robot → PC | ~7.8 Hz, 16 sonar Pioneer P3-DX dari LiDAR, `data[0..15]` = sensor 0..15 (m), tidak ada deteksi = 2.0 |
+| `/sonar/markers` | `visualization_msgs/MarkerArray` | robot → PC | gambar ke-16 sonar untuk RViz (display **MarkerArray**), lihat bagian 4 |
 | `/camera/image_raw/compressed` | `sensor_msgs/CompressedImage` | robot → PC | JPEG 640×360, 15 fps |
 | `/battery` | `sensor_msgs/BatteryState` | robot → PC | 1 Hz, baterai 3S (9.0–12.6 V) |
 | `/tf`, `/tf_static` | | robot → PC | `odom → base_footprint → base_link → {laser_frame, imu_link, camera_link}` |
@@ -92,6 +95,7 @@ Perintah lain:
 ```bash
 ROBOT_IP=10.17.36.90 ./ros.sh                     # shell ROS 2 interaktif
 ROBOT_IP=10.17.36.90 ./ros.sh rviz2               # RViz
+ROBOT_IP=10.17.36.90 ./ros.sh rviz2 -d /workspace/rviz/sonar.rviz   # RViz, tampilan sonar
 export ROBOT_IP=10.17.36.90                       # supaya tidak diulang terus
 ```
 
@@ -119,6 +123,14 @@ dan peta kalian di sini supaya tidak hilang saat container ditutup.
 - **LiDAR & kamera menyala sesuai permintaan:** motor LiDAR dan kamera hanya
   aktif kalau ada yang berlangganan. Scan pertama datang **sekitar 1.5 detik**
   setelah kalian mulai berlangganan. Itu normal.
+- **Sonar Pioneer P3-DX (`/sonar`):** robot mengubah LiDAR menjadi 16 sonar
+  yang meniru sensor ultrasonik P3-DX di CoppeliaSim (diukur dari scene
+  kelas). Indeks sama dengan `getDistance()`: 0..7 depan
+  `90 50 30 10 -10 -30 -50 -90`°, 8..15 belakang `-90 -130 -150 -170 170 150 130 90`°
+  (0 = depan, + = kiri). Sensor "menempel" di **tepi badan** robot, jadi
+  nilainya = jarak dari bemper sepanjang arah sensor. Cone ±14°, jangkauan
+  0.045–1.0 m, **tidak ada deteksi = 2.0**. Seperti `/scan`, data pertama
+  datang sekitar 1.5 detik setelah subscribe.
 - **QoS:** semua topik robot memakai **Reliable**, jadi cocok dengan QoS
   default (`10`) maupun `qos_profile_sensor_data`.
 - **Satu robot, satu pengendali.** Kalau dua PC mengirim `/cmd_vel`
@@ -129,17 +141,88 @@ dan peta kalian di sini supaya tidak hilang saat container ditutup.
 
 ## 4. Contoh
 
-### Hindari halangan (node Python paling sederhana)
+### Mode Pioneer P3-DX — `lib/p3dx.py` (program CoppeliaSim → robot)
 
-> ⚠ Percobaan pertama: **angkat roda dari lantai**.
+Program kelas untuk P3-DX di CoppeliaSim (`main.py` + `m_p3dx.py`) bisa
+dipindah ke robot dengan teori dan fungsi yang sama:
+
+| CoppeliaSim | Robot (`import p3dx`) |
+|---|---|
+| `import sim`, `import m_p3dx as p3dx` | `import p3dx` |
+| `clientID = connect()` (sim.simxStart) | `clientID = p3dx.connect()` |
+| `p3dx.getSensorsHandle`, `getMotorHandle`, `getDistance`, `setWheelVel`, `robotWheelKine` | **sama** |
+| `sim.simxFinish` | `p3dx.disconnect(clientID)` |
+| modul `keyboard` | `k = p3dx.tombol()` → `'w'`, `'a'`, ... atau `''` (tanpa Enter; terminal diurus library) |
 
 ```bash
-./ros.sh python3 /workspace/contoh/hindari_halangan.py
-./ros.sh python3 /workspace/contoh/hindari_halangan.py --ros-args -p kecepatan:=0.1 -p jarak_aman:=0.5
+./ros.sh python3 /workspace/contoh/test.py     # angkat roda dulu!
 ```
 
-Robot maju pelan dan berhenti kalau ada benda < 0.6 m di depannya. Baca
-kodenya di [`contoh/hindari_halangan.py`](contoh/hindari_halangan.py).
+[`contoh/test.py`](contoh/test.py) adalah program terkecil: sambung ke robot,
+tampilkan ke-16 sonar, dan gerakkan robot dengan `w`/`s`/`a`/`d` (tahan
+tombolnya). `q` atau Ctrl-C = keluar, robot berhenti. Pakai sebagai titik
+awal program kalian sendiri.
+
+Cara kerjanya: `setWheelVel` mengirim kecepatan roda P3-DX `[φL, φR]` ke
+`/cmd_wheel_vel`. Robot menghitung gerak P3-DX yang sebenarnya
+(r = 0.0975 m, jarak roda 0.331 m, sama dengan model di Coppelia), lalu
+menjalankannya dengan kemudi Ackermann. Gain yang sudah di-tuning di
+Coppelia tetap bermakna sama.
+
+Bedanya dengan P3-DX (mobil Ackermann, bagian 3):
+- **Tidak bisa berputar di tempat.** `φL = −φR` → robot diam. Tombol a/d di
+  contoh dibuat maju sambil belok.
+- Radius belok minimum terbatas; belok tajam "mentok".
+- Perintah roda terakhir tetap berlaku seperti di Coppelia, tetapi robot
+  berhenti begitu program selesai/crash/Ctrl-C.
+
+Saat **mundur**, `setWheelVel`/`robotWheelKine` tetap memutar robot ke arah
+yang sama dengan P3-DX (ω > 0 = berlawanan jarum jam). Ini berbeda dengan
+`/cmd_vel` langsung: di sana `angular.z` adalah arah kemudi, jadi saat mundur
+dengan `angular.z > 0` badan robot berputar **searah** jarum jam, seperti
+mobil yang mundur dengan setir ke kiri.
+
+**Sonar di node ROS 2 sendiri.** Tidak perlu mengubah `/scan` menjadi sonar
+di program kalian — robot sudah mengirimnya di `/sonar`:
+
+```python
+from std_msgs.msg import Float32MultiArray
+
+self.create_subscription(Float32MultiArray, '/sonar', self.sonar_callback, 10)
+
+def sonar_callback(self, msg):
+    self.sensor = list(msg.data)        # sensor[0..15]; tidak ada deteksi = 2.0
+    d = min(self.sensor[3], self.sensor[4])      # materi: d = min(S4, S5)
+    q = self.sensor[5] - self.sensor[2]          #         θ = S6 − S3
+```
+
+Slide menomori sonar dari 1 (S1..S16); program dan topik dari 0
+(`sensor[0..15]`, label `s0..s15` di RViz). Jadi S4 di slide = `sensor[3]`.
+
+### Melihat sonar di RViz — `rviz/sonar.rviz`
+
+```bash
+./ros.sh rviz2 -d /workspace/rviz/sonar.rviz
+```
+
+![Tampilan sonar di RViz](rviz/sonar.png)
+
+*(contoh: kotak di depan, dinding di kanan, benda dekat di kiri-belakang)*
+
+Robot dilihat dari atas, **depan robot = atas layar**:
+
+- **garis tipis** = daerah deteksi tiap sonar (cone ±14° sampai 1.0 m, mulai
+  dari tepi badan robot);
+- **segitiga berwarna** = sonar yang mendeteksi sesuatu, digambar sampai jarak
+  terbaca. Merah = dekat, kuning = sedang, hijau = jauh;
+- **label** `s3` / `0.54` = indeks sonar dan nilai yang dibaca program.
+  Abu-abu `2.00` = tidak ada deteksi;
+- **titik biru** = LiDAR asli (`/scan`), untuk membandingkan.
+
+Semua digambar robot di satu topik, `/sonar/markers`. Di config RViz kalian
+sendiri cukup **Add → By topic → /sonar/markers → MarkerArray**. Bagian
+gambarnya bisa dimatikan satu per satu di *Namespaces* (misalnya
+`sonar/jangkauan` kalau terasa ramai).
 
 ### Gaya ROS 1 (rospy) — `lib/ros1_style.py`
 
@@ -166,12 +249,7 @@ while not rospy.is_shutdown():
 
 Simpan di mana saja di folder kit, lalu jalankan dengan
 `./ros.sh python3 /workspace/<file>.py`. `import ros1_style` selalu tersedia
-di `ros.sh`. Contoh lengkap yang kecil: [`contoh/keyboard_test.py`](contoh/keyboard_test.py),
-yaitu kendali keyboard (`w`/`a`/`s`/`d`, spasi = berhenti) dengan rem darurat dari `/scan`:
-
-```bash
-./ros.sh python3 /workspace/contoh/keyboard_test.py     # angkat roda dulu!
-```
+di `ros.sh`.
 
 | rospy (ROS 1) | `ros1_style` |
 |---|---|
@@ -188,7 +266,7 @@ yaitu kendali keyboard (`w`/`a`/`s`/`d`, spasi = berhenti) dengan rem darurat da
   sehingga robot berhenti.
 - `rospy.node` adalah node rclpy biasa, kalau butuh fitur ROS 2 lain.
 - Gaya ini untuk belajar dan program sederhana. Untuk paket dengan launch file
-  (bagian 5), pakai gaya class/timer seperti `hindari_halangan.py`.
+  (bagian 5), pakai gaya class/timer (node rclpy biasa).
 
 ### Teleop keyboard
 
@@ -316,7 +394,7 @@ Build ulang: `./ros.sh bash -c "cd /workspace/ros2_ws && colcon build --symlink-
 ### Menambah node kedua
 
 1. Buat `ros2_ws/src/tugas_saya/tugas_saya/node_kedua.py` dengan fungsi `main()`
-   (salin pola dari [`contoh/hindari_halangan.py`](contoh/hindari_halangan.py)).
+   (salin pola dari `node_saya.py`).
 2. Daftarkan di `setup.py`, bagian `entry_points`:
    ```python
    'console_scripts': [
